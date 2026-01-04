@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CryTracker 2026</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body class="bg-gradient-to-br from-blue-50 to-purple-50 min-h-screen">
+    <div id="app" class="p-4 max-w-6xl mx-auto">
+        <!-- Loading -->
+        <div id="loading" class="flex items-center justify-center min-h-screen">
+            <div class="text-center">
+                <div class="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-purple-600"></div>
+                <p class="text-gray-600 mt-4">Cargando tus datos...</p>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <div id="content" class="hidden">
+            <div class="flex items-center justify-between mb-2">
+                <h1 class="text-4xl font-bold text-purple-900">CryTracker 2026</h1>
+                <div id="syncStatus" class="text-sm text-gray-500"></div>
+            </div>
+            <p class="text-center text-gray-600 mb-6">Registro emocional personal • Sincronizado en todos tus dispositivos ☁️</p>
+
+            <!-- Navigation -->
+            <div class="flex gap-2 mb-6 justify-center flex-wrap">
+                <button onclick="showView('register')" class="nav-btn px-4 py-2 rounded-lg font-medium transition">
+                    Registrar
+                </button>
+                <button onclick="showView('history')" class="nav-btn px-4 py-2 rounded-lg font-medium transition">
+                    Ver Registros
+                </button>
+                <button onclick="showView('stats')" class="nav-btn px-4 py-2 rounded-lg font-medium transition">
+                    Estadísticas
+                </button>
+                <button onclick="clearAllData()" class="px-4 py-2 rounded-lg font-medium bg-red-100 text-red-600 hover:bg-red-200 transition">
+                    Borrar Todo
+                </button>
+            </div>
+
+            <!-- Register View -->
+            <div id="view-register" class="view-content">
+                <div class="bg-white rounded-xl shadow-lg p-6">
+                    <h2 class="text-2xl font-bold mb-4 text-purple-800">Registrar Momento</h2>
+                    <div class="grid gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Fecha</label>
+                            <input type="date" id="inputDate" max="2026-12-31" min="2026-01-01" 
+                                   class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Cantidad de veces</label>
+                            <input type="number" id="inputCount" min="1" value="1"
+                                   class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Motivo</label>
+                            <input type="text" id="inputReason" placeholder="¿Qué te hizo llorar?"
+                                   class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500">
+                        </div>
+                        <button onclick="addEntry()" id="addBtn"
+                                class="w-full bg-purple-600 text-white py-3 rounded-lg font-medium hover:bg-purple-700 transition">
+                            Agregar Registro
+                        </button>
+                    </div>
+                    <div id="recentEntries" class="mt-6"></div>
+                </div>
+            </div>
+
+            <!-- History View -->
+            <div id="view-history" class="view-content hidden">
+                <div class="bg-white rounded-xl shadow-lg p-6">
+                    <h2 class="text-2xl font-bold mb-4 text-purple-800">Historial de Registros</h2>
+                    <div id="historyContent"></div>
+                </div>
+            </div>
+
+            <!-- Stats View -->
+            <div id="view-stats" class="view-content hidden">
+                <div id="statsContent"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Configuración de Supabase
+        const SUPABASE_URL = 'https://wqikimtkwzepwvcoomcb.supabase.co';
+        const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndxaWtpbXRrd3plcHd2Y29vbWNiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzYwMjQwMDQsImV4cCI6MjA1MTYwMDAwNH0.CREdPm2s0vC1kBMBVsBv3qMM0wjV0MtfbNBTffjWLok';
+        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+        let entries = [];
+        const months = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 
+                        'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+
+        // Inicialización
+        document.addEventListener('DOMContentLoaded', () => {
+            loadData();
+            document.getElementById('inputDate').valueAsDate = new Date();
+        });
+
+        async function loadData() {
+            try {
+                setSyncStatus('Cargando...');
+                const { data, error } = await supabase
+                    .from('entries')
+                    .select('*')
+                    .order('date', { ascending: false });
+
+                if (error) throw error;
+                
+                entries = data || [];
+                setSyncStatus('✓ Sincronizado');
+            } catch (error) {
+                console.error('Error loading data:', error);
+                setSyncStatus('⚠️ Error al cargar');
+                alert('Error al cargar los datos. Verifica tu conexión.');
+            } finally {
+                document.getElementById('loading').classList.add('hidden');
+                document.getElementById('content').classList.remove('hidden');
+                showView('register');
+            }
+        }
+
+        function setSyncStatus(text) {
+            document.getElementById('syncStatus').textContent = text;
+        }
+
+        async function addEntry() {
+            const date = document.getElementById('inputDate').value;
+            const count = parseInt(document.getElementById('inputCount').value);
+            const reason = document.getElementById('inputReason').value.trim();
+
+            if (!date || !reason) {
+                alert('Por favor completa todos los campos');
+                return;
+            }
+
+            try {
+                const btn = document.getElementById('addBtn');
+                btn.disabled = true;
+                btn.textContent = 'Guardando...';
+                setSyncStatus('Guardando...');
+
+                const { data, error } = await supabase
+                    .from('entries')
+                    .insert([{ date, count, reason }])
+                    .select();
+
+                if (error) throw error;
+
+                entries.push(data[0]);
+                document.getElementById('inputReason').value = '';
+                document.getElementById('inputCount').value = '1';
+                
+                setSyncStatus('✓ Guardado');
+                showView('register');
+            } catch (error) {
+                console.error('Error adding entry:', error);
+                setSyncStatus('⚠️ Error');
+                alert('Error al guardar. Verifica tu conexión.');
+            } finally {
+                const btn = document.getElementById('addBtn');
+                btn.disabled = false;
+                btn.textContent = 'Agregar Registro';
+            }
+        }
+
+        async function deleteEntry(id) {
+            if (!confirm('¿Eliminar este registro?')) return;
+
+            try {
+                setSyncStatus('Eliminando...');
+                const { error } = await supabase
+                    .from('entries')
+                    .delete()
+                    .eq('id', id);
+
+                if (error) throw error;
+
+                entries = entries.filter(e => e.id !== id);
+                setSyncStatus('✓ Eliminado');
+                
+                const currentView = document.querySelector('.view-content:not(.hidden)').id.replace('view-', '');
+                showView(currentView);
+            } catch (error) {
+                console.error('Error deleting entry:', error);
+                setSyncStatus('⚠️ Error');
+                alert('Error al eliminar. Verifica tu conexión.');
+            }
+        }
+
+        async function clearAllData() {
+            if (!confirm('¿Estás seguro de que quieres borrar TODOS los datos? Esta acción no se puede deshacer.')) return;
+
+            try {
+                setSyncStatus('Borrando todo...');
+                const { error } = await supabase
+                    .from('entries')
+                    .delete()
+                    .neq('id', 0); // Delete all rows
+
+                if (error) throw error;
+
+                entries = [];
+                setSyncStatus('✓ Todo borrado');
+                showView('register');
+            } catch (error) {
+                console.error('Error clearing data:', error);
+                setSyncStatus('⚠️ Error');
+                alert('Error al borrar. Verifica tu conexión.');
+            }
+        }
+
+        function showView(view) {
+            // Update navigation
+            document.querySelectorAll('.nav-btn').forEach((btn, index) => {
+                const views = ['register', 'history', 'stats'];
+                if (views[index] === view) {
+                    btn.className = 'nav-btn px-4 py-2 rounded-lg font-medium transition bg-purple-600 text-white';
+                } else {
+                    btn.className = 'nav-btn px-4 py-2 rounded-lg font-medium transition bg-white text-purple-600 hover:bg-purple-100';
+                }
+            });
+
+            // Hide all views
+            document.querySelectorAll('.view-content').forEach(v => v.classList.add('hidden'));
+            
+            // Show selected view
+            document.getElementById(`view-${view}`).classList.remove('hidden');
+
+            // Update content
+            if (view === 'register') updateRecentEntries();
+            if (view === 'history') updateHistory();
+            if (view === 'stats') updateStats();
+        }
+
+        function updateRecentEntries() {
+            const container = document.getElementById('recentEntries');
+            if (entries.length === 0) {
+                container.innerHTML = '';
+                return;
+            }
+
+            const recent = entries.slice(0, 10);
+            container.innerHTML = `
+                <h3 class="text-lg font-semibold mb-3 text-gray-800">Registros Recientes</h3>
+                <div class="space-y-2 max-h-60 overflow-y-auto">
+                    ${recent.map((entry) => `
+                        <div class="bg-purple-50 p-3 rounded-lg flex justify-between items-center">
+                            <div>
+                                <p class="font-medium text-gray-800">${entry.date}</p>
+                                <p class="text-sm text-gray-600">${entry.reason} - ${entry.count} ${entry.count === 1 ? 'vez' : 'veces'}</p>
+                            </div>
+                            <button onclick="deleteEntry(${entry.id})" 
+                                    class="text-red-500 hover:text-red-700 text-sm font-medium">
+                                Eliminar
+                            </button>
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+        }
+
+        function updateHistory() {
+            const container = document.getElementById('historyContent');
+            
+            if (entries.length === 0) {
+                container.innerHTML = `
+                    <div class="text-center py-12">
+                        <div class="text-gray-300 mb-4 text-6xl">📅</div>
+                        <p class="text-gray-500 text-lg">No hay registros todavía</p>
+                        <p class="text-gray-400 text-sm mt-2">Comienza agregando tu primer momento</p>
+                    </div>
+                `;
+                return;
+            }
+
+            container.innerHTML = `
+                <div class="mb-4 text-sm text-gray-600">
+                    Total: ${entries.length} ${entries.length === 1 ? 'registro' : 'registros'}
+                </div>
+                <div class="space-y-3 max-h-[600px] overflow-y-auto">
+                    ${entries.map((entry) => {
+                        const date = new Date(entry.date + 'T00:00:00');
+                        const formatted = date.toLocaleDateString('es-ES', { 
+                            weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' 
+                        });
+                        return `
+                            <div class="bg-gradient-to-r from-purple-50 to-blue-50 p-4 rounded-lg border border-purple-100">
+                                <div class="flex justify-between items-start">
+                                    <div class="flex-1">
+                                        <div class="text-lg font-bold text-purple-900 mb-2">${formatted}</div>
+                                        <div class="mb-2">
+                                            <span class="bg-purple-200 text-purple-800 px-2 py-1 rounded text-sm font-medium">
+                                                ${entry.count} ${entry.count === 1 ? 'vez' : 'veces'}
+                                            </span>
+                                        </div>
+                                        <p class="text-gray-700"><span class="font-medium">Motivo:</span> ${entry.reason}</p>
+                                    </div>
+                                    <button onclick="deleteEntry(${entry.id})"
+                                            class="ml-4 text-red-500 hover:text-red-700 text-sm font-medium px-3 py-1 rounded hover:bg-red-50 transition">
+                                        Eliminar
+                                    </button>
+                                </div>
+                            </div>
+                        `;
+                    }).join('')}
+                </div>
+            `;
+        }
+
+        function updateStats() {
+            const container = document.getElementById('statsContent');
+            
+            // Calculations
+            const totalCries = entries.reduce((sum, e) => sum + e.count, 0);
+            const percentageOfYear = ((totalCries / 365) * 100).toFixed(2);
+            const weeklyAverage = (totalCries / 52).toFixed(2);
+
+            const monthlyStats = {};
+            entries.forEach(entry => {
+                const month = new Date(entry.date + 'T00:00:00').getMonth();
+                monthlyStats[month] = (monthlyStats[month] || 0) + entry.count;
+            });
+
+            const bestMonth = Object.entries(monthlyStats).reduce((min, [m, c]) => 
+                c < (min.count || Infinity) ? { month: parseInt(m), count: c } : min, {});
+            const worstMonth = Object.entries(monthlyStats).reduce((max, [m, c]) => 
+                c > (max.count || -Infinity) ? { month: parseInt(m), count: c } : max, {});
+
+            const dailyStats = {};
+            entries.forEach(entry => {
+                dailyStats[entry.date] = (dailyStats[entry.date] || 0) + entry.count;
+            });
+
+            const worstDay = Object.entries(dailyStats).reduce((max, [d, c]) => 
+                c > (max.count || -Infinity) ? { date: d, count: c } : max, {});
+
+            const reasonStats = {};
+            entries.forEach(entry => {
+                reasonStats[entry.reason] = (reasonStats[entry.reason] || 0) + entry.count;
+            });
+
+            const reasonPercentages = Object.entries(reasonStats).map(([reason, count]) => ({
+                reason, count, percentage: ((count / totalCries) * 100).toFixed(1)
+            }));
+
+            // Longest streak
+            const dates = [...new Set(entries.map(e => e.date))].sort();
+            let longestStreak = 0, currentStreak = 0, prevDate = null;
+            dates.forEach(dateStr => {
+                const current = new Date(dateStr + 'T00:00:00');
+                if (prevDate) {
+                    const diff = Math.floor((current - prevDate) / (1000 * 60 * 60 * 24));
+                    currentStreak = diff === 1 ? currentStreak + 1 : 1;
+                } else {
+                    currentStreak = 1;
+                }
+                longestStreak = Math.max(longestStreak, currentStreak);
+                prevDate = current;
+            });
+
+            container.innerHTML = `
+                <div class="space-y-6">
+                    <!-- General Stats -->
+                    <div class="grid md:grid-cols-3 gap-4">
+                        <div class="bg-white rounded-xl shadow-lg p-6">
+                            <h3 class="font-semibold text-gray-700 mb-2">Total del Año</h3>
+                            <p class="text-3xl font-bold text-purple-900">${totalCries}</p>
+                            <p class="text-sm text-gray-600 mt-1">veces</p>
+                        </div>
+                        <div class="bg-white rounded-xl shadow-lg p-6">
+                            <h3 class="font-semibold text-gray-700 mb-2">Porcentaje del Año</h3>
+                            <p class="text-3xl font-bold text-blue-900">${percentageOfYear}%</p>
+                            <p class="text-sm text-gray-600 mt-1">de días con registro</p>
+                        </div>
+                        <div class="bg-white rounded-xl shadow-lg p-6">
+                            <h3 class="font-semibold text-gray-700 mb-2">Promedio Semanal</h3>
+                            <p class="text-3xl font-bold text-green-900">${weeklyAverage}</p>
+                            <p class="text-sm text-gray-600 mt-1">veces por semana</p>
+                        </div>
+                    </div>
+
+                    <!-- Best/Worst Month -->
+                    <div class="grid md:grid-cols-2 gap-4">
+                        <div class="bg-white rounded-xl shadow-lg p-6">
+                            <h3 class="font-semibold text-gray-700 mb-3">Mejor Mes</h3>
+                            ${bestMonth.month !== undefined ? `
+                                <p class="text-2xl font-bold text-green-900">${months[bestMonth.month]}</p>
+                                <p class="text-gray-600">${bestMonth.count} veces</p>
+                            ` : '<p class="text-gray-500">Sin datos aún</p>'}
+                        </div>
+                        <div class="bg-white rounded-xl shadow-lg p-6">
+                            <h3 class="font-semibold text-gray-700 mb-3">Peor Mes</h3>
+                            ${worstMonth.month !== undefined ? `
+                                <p class="text-2xl font-bold text-red-900">${months[worstMonth.month]}</p>
+                                <p class="text-gray-600">${worstMonth.count} veces</p>
+                            ` : '<p class="text-gray-500">Sin datos aún</p>'}
+                        </div>
+                    </div>
+
+                    <!-- Worst Day -->
+                    <div class="bg-white rounded-xl shadow-lg p-6">
+                        <h3 class="font-semibold text-gray-700 mb-3">Día que Más Lloré del Año</h3>
+                        ${worstDay.date ? `
+                            <p class="text-2xl font-bold text-purple-900">${worstDay.date}</p>
+                            <p class="text-gray-600">${worstDay.count} veces</p>
+                        ` : '<p class="text-gray-500">Sin datos aún</p>'}
+                    </div>
+
+                    <!-- Longest Streak -->
+                    <div class="bg-white rounded-xl shadow-lg p-6">
+                        <h3 class="font-semibold text-gray-700 mb-3">Racha Más Larga</h3>
+                        <p class="text-2xl font-bold text-orange-900">${longestStreak}</p>
+                        <p class="text-gray-600">días consecutivos</p>
+                    </div>
+
+                    <!-- Reasons -->
+                    <div class="bg-white rounded-xl shadow-lg p-6">
+                        <h3 class="font-semibold text-gray-700 mb-4">Motivos</h3>
+                        ${reasonPercentages.length > 0 ? `
+                            <div class="space-y-3">
+                                ${reasonPercentages.map(item => `
+                                    <div class="border-b pb-2">
+                                        <div class="flex justify-between items-center mb-1">
+                                            <span class="font-medium text-gray-800">${item.reason}</span>
+                                            <span class="text-sm text-gray-600">${item.percentage}%</span>
+                                        </div>
+                                        <div class="flex items-center gap-2">
+                                            <div class="flex-1 bg-gray-200 rounded-full h-2">
+                                                <div class="bg-purple-600 h-2 rounded-full" style="width: ${item.percentage}%"></div>
+                                            </div>
+                                            <span class="text-sm text-gray-600">${item.count}</span>
+                                        </div>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        ` : '<p class="text-gray-500">Sin datos aún</p>'}
+                    </div>
+
+                    <!-- Monthly Totals -->
+                    <div class="bg-white rounded-xl shadow-lg p-6">
+                        <h3 class="font-semibold text-gray-700 mb-4">Cantidad Total por Mes</h3>
+                        ${Object.keys(monthlyStats).length > 0 ? `
+                            <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                                ${months.map((month, i) => `
+                                    <div class="bg-purple-50 p-3 rounded-lg">
+                                        <p class="text-sm font-medium text-gray-700">${month}</p>
+                                        <p class="text-xl font-bold text-purple-900">${monthlyStats[i] || 0}</p>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        ` : '<p class="text-gray-500">Sin datos aún</p>'}
+                    </div>
+                </div>
+            `;
+        }
+    </script>
+</body>
+</html>
